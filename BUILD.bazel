@@ -1,0 +1,92 @@
+load("@rules_cuda//cuda:defs.bzl", "cuda_library")
+
+cuda_library(
+    name = "cute",
+    hdrs = glob(["3rdparty/cutlass/include/cute/**/*"]),
+    includes = ["3rdparty/cutlass/include"],
+)
+
+cuda_library(
+    name = "cutlass_utils",
+    hdrs = glob(["3rdparty/cutlass/tools/util/include/**/*"]),
+    includes = ["3rdparty/cutlass/tools/util/include"],
+    deps = [":cute"],
+)
+
+cuda_library(
+    name = "cutlass",
+    hdrs = glob(["3rdparty/cutlass/include/cutlass/**/*"]),
+    includes = ["3rdparty/cutlass/include"],
+    deps = [
+        ":cute",
+        ":cutlass_utils",
+    ],
+)
+
+cuda_library(
+    name = "flashinfer",
+    hdrs = glob(["include/flashinfer/**/*"]),
+    defines = [
+        "FLASHINFER_ENABLE_F16",
+        "FLASHINFER_ENABLE_BF16",
+        # "FLASHINFER_ENABLE_FP8_E4M3",
+        # "FLASHINFER_ENABLE_FP8_E5M2",
+    ],
+    includes = ["include"],
+    deps = [
+        "//:cute",
+        "//:cutlass",
+    ],
+)
+
+cc_library(
+    name = "dispatch",
+    textual_hdrs = ["generated/dispatch.inc"],
+)
+
+cuda_library(
+    name = "generated",
+    hdrs = ["generated/aot_default_additional_params.h"],
+    includes = ["."],
+    srcs = glob([
+        "generated/batch_paged_decode_*.cu",
+        "generated/batch_paged_prefill_*_sm90.cu",
+    ]),
+    deps = [
+        ":dispatch",
+        ":flashinfer",
+        "//:cute",
+        "//:cutlass",
+     ],
+)
+
+cuda_library(
+    name = "flashinfer_ops",
+    hdrs = [
+        "src/utils.h",
+        "src/flashinfer_ops.cuh",
+    ],
+    deps = [
+        ":flashinfer",
+        ":generated",
+    ],
+)
+
+cuda_library(
+    name = "capi",
+    hdrs = ["capi/capi.h"],
+    srcs = ["capi/capi.cu"],
+    copts = [
+        "-Xcompiler",
+        "-Wno-switch-bool",
+        "-Xcompiler",
+        "-fvisibility=hidden",
+    ],
+    deps = [":flashinfer_ops"],
+    alwayslink = True,
+)
+
+cc_shared_library(
+    name = "flashinfer_so",
+    deps = [":capi"],
+)
