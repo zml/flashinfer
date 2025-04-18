@@ -50,7 +50,7 @@ cuda_library(
     includes = ["."],
     srcs = glob([
         "generated/batch_paged_decode_*.cu",
-        "generated/batch_paged_prefill_*_sm90.cu",
+        "generated/batch_paged_prefill_*.cu",
     ]),
     deps = [
         ":dispatch",
@@ -79,8 +79,8 @@ cuda_library(
     copts = [
         "-Xcompiler",
         "-Wno-switch-bool",
-        "-Xcompiler",
-        "-fvisibility=hidden",
+        #"-Xcompiler",
+        #"-fvisibility=hidden",
     ],
     deps = [":flashinfer_ops"],
     alwayslink = True,
