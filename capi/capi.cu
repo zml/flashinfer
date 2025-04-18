@@ -41,7 +41,7 @@ void flashinfer_BatchDecodeHandlerPlan(
         num_kv_heads,
         head_dim,
         page_size,
-        flashinfer::PosEncodingMode::kRoPELlama);
+        flashinfer::PosEncodingMode::kNone);
 }
 
 __attribute__ ((visibility("default")))
@@ -85,7 +85,11 @@ void flashinfer_BatchDecodeWithPagedKVCacheWrapper(
         static_cast<DTypeO*>(o),
         lse,
         num_qo_heads,
-        flashinfer::PosEncodingMode::kRoPELlama);
+        flashinfer::PosEncodingMode::kNone,
+        std::nullopt,
+        1.f,
+        1e4,
+        reinterpret_cast<cudaStream_t>(stream));
 }
 
 __attribute__ ((visibility("default")))
@@ -172,7 +176,11 @@ void flashinfer_BatchPrefillWithPagedKVCacheWrapper(
         lse,
         num_qo_heads,
         causal,
-        flashinfer::PosEncodingMode::kRoPELlama,
-        false);
+        flashinfer::PosEncodingMode::kNone,
+        false,
+        std::nullopt,
+        1.f,
+        1e4,
+        reinterpret_cast<cudaStream_t>(stream));
 
 }
