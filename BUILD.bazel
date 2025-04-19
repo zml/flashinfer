@@ -1,4 +1,8 @@
 load("@rules_cuda//cuda:defs.bzl", "cuda_library")
+load(":kernel_instances.bzl", "kernel_instances")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+load("@rules_python//python/entry_points:py_console_script_binary.bzl", "py_console_script_binary")
 
 cuda_library(
     name = "cute",
@@ -39,21 +43,73 @@ cuda_library(
     ],
 )
 
+write_file(
+    name = "pytorch_extension_utils_h",
+    out = "csrc/pytorch_extension_utils.h",
+    content = [],
+)
+
+write_file(
+    name = "pytorch_conversion_utils_h",
+    out = "csrc/pytorch_conversion_utils.h",
+    content = [],
+)
+
 cc_library(
-    name = "dispatch",
-    textual_hdrs = ["generated/dispatch.inc"],
+    name = "pytorch_dummies",
+    hdrs = [
+        "csrc/pytorch_extension_utils.h",
+        "csrc/pytorch_conversion_utils.h",
+    ],
+    includes = ["csrc"],
+)
+
+cc_library(
+    name = "headers_generated",
+    hdrs = [
+        "generated/aot_default_additional_params.h",
+    ],
+    textual_hdrs = [
+        "generated/dispatch.inc",
+    ],
+    includes = ["generated"],
+    include_prefix = "generated",
+    deps = [
+        ":flashinfer",
+        "//:cute",
+        "//:cutlass",
+    ],
+)
+
+cc_library(
+    name = "headers_inc",
+    hdrs = [
+        "csrc/aot_extension_utils.h",
+    ],
+    textual_hdrs = [
+        "csrc/batch_decode_config.inc",
+    ],
+    includes = ["csrc"],
+    deps = [
+        ":pytorch_dummies",
+        ":flashinfer",
+        "//:cute",
+        "//:cutlass",
+    ],
 )
 
 cuda_library(
-    name = "generated",
-    hdrs = ["generated/aot_default_additional_params.h"],
-    includes = ["."],
-    srcs = glob([
-        "generated/batch_paged_decode_*.cu",
-        "generated/batch_paged_prefill_*.cu",
-    ]),
+    name = "kernels",
+    srcs = [
+        ":batch_decode_instances",
+        ":batch_prefill_instances",
+        ":batch_prefill_sm90_instances",
+        ":pod_instances",
+    ],
+    copts = ["-diag-suppress", "177"],
     deps = [
-        ":dispatch",
+        ":headers_generated",
+        ":headers_inc",
         ":flashinfer",
         "//:cute",
         "//:cutlass",
@@ -68,7 +124,7 @@ cuda_library(
     ],
     deps = [
         ":flashinfer",
-        ":generated",
+        ":kernels",
     ],
 )
 
@@ -89,4 +145,154 @@ cuda_library(
 cc_shared_library(
     name = "flashinfer_so",
     deps = [":capi"],
+)
+
+head_dims = [
+    "64",
+    "128",
+    "256",
+]
+
+head_dim_vo = [
+    "64",
+    "128",
+    "256",
+]
+
+mask_mode_literal = [
+    "MaskMode::kNone",
+    "MaskMode::kCausal",
+    "MaskMode::kCustom",
+]
+
+pos_encoding_mode_literal = [
+    "PosEncodingMode::kNone",
+    "PosEncodingMode::kRoPELlama",
+    "PosEncodingMode::kALiBi",
+]
+
+dtype_literal = [
+    # "half",
+    "nv_bfloat16",
+    # "float",
+    # "__nv_fp8_e4m3",
+    # "__nv_fp8_e5m2",
+]
+
+kernel_instances(
+    name = "batch_decode_instances",
+    template = "csrc/batch_decode_kernel_inst.jinja",
+    values = {
+        "head_dim_qk": head_dims,
+        "pos_encoding_mode": pos_encoding_mode_literal,
+        "dtype_o": dtype_literal,
+        "variant_name": ["AttentionVariant"],
+    },
+    pre_substitutions = {
+        "#include <flashinfer/attention/decode.cuh>": "#include <flashinfer/attention_impl.cuh>",
+        "#include \"batch_decode_config.inc\"": """\
+using AttentionVariant = ::flashinfer::DefaultAttention<
+    /*use_custom_mask=*/false,
+    /*use_sliding_window=*/false,
+    /*use_logits_soft_cap=*/false,
+    /*use_alibi_bias=*/false>;
+using Params = ::flashinfer::BatchDecodeParams<{{ dtype_o }}, {{ dtype_o }}, {{ dtype_o }}, int32_t>;
+""",
+    },
+)
+
+kernel_instances(
+    name = "batch_prefill_instances",
+    template = "csrc/batch_prefill_paged_kernel_inst.jinja",
+    values = {
+        "head_dim_qk": head_dims,
+        "pos_encoding_mode": pos_encoding_mode_literal,
+        "use_fp16_qk_reduction": ["false"],
+        "mask_mode": mask_mode_literal,
+        "dtype_o": dtype_literal,
+        "variant_name": ["AttentionVariant"],
+    },
+    pre_substitutions = {
+        "head_dim_vo": "head_dim_qk",
+        "#include <flashinfer/attention/prefill.cuh>": "#include <flashinfer/attention_impl.cuh>",
+        "#include \"batch_prefill_config.inc\"": """\
+using AttentionVariant = ::flashinfer::DefaultAttention<
+    /*use_custom_mask=*/::flashinfer::{{ mask_mode }} == ::flashinfer::MaskMode::kCustom,
+    /*use_sliding_window=*/false,
+    /*use_logits_soft_cap=*/false,
+    /*use_alibi_bias=*/false>;
+using PagedParams = ::flashinfer::BatchPrefillPagedParams<{{ dtype_o }}, {{ dtype_o }}, {{ dtype_o }}, int32_t>;
+""",
+    },
+)
+
+kernel_instances(
+    name = "batch_prefill_sm90_instances",
+    template = "csrc/batch_prefill_paged_sm90_kernel_inst.jinja",
+    values = {
+        "head_dim_qk": head_dims,
+        "use_sliding_window": ["false"],
+        "dtype_o": dtype_literal,
+        "variant_name": ["LogitsSoftCap", "StandardAttention"],
+        "mask_mode": mask_mode_literal,
+    },
+    pre_substitutions = {
+        "{{ head_dim_vo }}": "{{ head_dim_qk }}",
+        "#include \"batch_prefill_sm90_config.inc\"": """\
+#include <flashinfer/attention/hopper/default_params.cuh>
+#include <flashinfer/attention/hopper/variants.cuh>
+#include <flashinfer/cutlass_utils.cuh>
+
+using PagedParams = ::flashinfer::BatchPrefillPagedParams<
+    ::flashinfer::cutlass_dtype_t<{{ dtype_o }}>,
+    ::flashinfer::cutlass_dtype_t<{{ dtype_o }}>,
+    ::flashinfer::cutlass_dtype_t<{{ dtype_o }}>,
+    int32_t>;
+""",
+    },
+)
+
+kernel_instances(
+    name = "pod_instances",
+    template = "csrc/pod_kernel_inst.jinja",
+    values = {
+        "head_dim_qk": head_dims,
+        "use_fp16_qk_reduction": ["false"],
+        "mask_mode_p": mask_mode_literal,
+        "mask_mode_d": mask_mode_literal,
+        "dtype_o": dtype_literal,
+        "variant_name_p": ["AttentionVariantP"],
+        "variant_name_d": ["AttentionVariantD"],
+    },
+    pre_substitutions = {
+        "head_dim_vo": "head_dim_qk",
+        "#include <flashinfer/attention/prefill.cuh>": "#include <flashinfer/attention_impl.cuh>",
+        "#include \"pod_config.inc\"": """\
+using AttentionVariantP = ::flashinfer::DefaultAttention<
+    /*use_custom_mask=*/::flashinfer::{{ mask_mode_p }} == ::flashinfer::MaskMode::kCustom,
+    /*use_sliding_window=*/false,
+    /*use_logits_soft_cap=*/false,
+    /*use_alibi_bias=*/false>;
+using AttentionVariantD = ::flashinfer::DefaultAttention<
+    /*use_custom_mask=*/::flashinfer::{{ mask_mode_d }} == ::flashinfer::MaskMode::kCustom,
+    /*use_sliding_window=*/false,
+    /*use_logits_soft_cap=*/false,
+    /*use_alibi_bias=*/false>;
+using PrefillParams = ::flashinfer::SinglePrefillParams<{{ dtype_o }}, {{ dtype_o }}, {{ dtype_o }}>;
+using DecodeParams = ::flashinfer::BatchPrefillPagedParams<{{ dtype_o }}, {{ dtype_o }}, {{ dtype_o }}, int32_t>;
+""",
+    },
+)
+
+compile_pip_requirements(
+    name = "requirements",
+    src = "requirements.txt",
+    requirements_txt = "requirements.lock.txt",
+)
+
+py_console_script_binary(
+    name = "jinja_cli",
+    script = "jinja",
+    pkg = "@pypi//jinja_cli",
+    visibility = ["//visibility:public"],
 )
