@@ -51,6 +51,7 @@ cuda_library(
     srcs = glob([
         "generated/batch_paged_decode_*.cu",
         "generated/batch_paged_prefill_*.cu",
+        "generated/pod_*.cu",
     ]),
     deps = [
         ":dispatch",

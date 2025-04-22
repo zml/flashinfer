@@ -26,6 +26,7 @@ from . import (
     generate_batch_ragged_prefill_inst,
     generate_single_decode_inst,
     generate_single_prefill_inst,
+    generate_pod_inst,
 )
 
 
@@ -250,11 +251,60 @@ def get_instantiation_cu(args: argparse.Namespace) -> List[str]:
                             f"f16qk_{bool(use_fp16_qk_reduction)}"
                         )
 
+    pod_pos_encoding_modes = [0]
+    # pod files
+    pod_uris = []
+    for (
+        head_dim,
+        pos_encoding_mode,
+        use_fp16_qk_reduction,
+        mask_mode,
+        idtype,
+    ) in product(
+        head_dims,
+        pod_pos_encoding_modes,
+        use_fp16_qk_reductions,
+        mask_modes,
+        idtypes,
+    ):
+        for dtype_q, dtype_kv in list(zip(prefill_dtypes, prefill_dtypes)) + list(
+            product(prefill_dtypes, fp8_dtypes)
+        ):
+            dtype_out = dtype_q
+            fname = f"pod_head_qk_{head_dim}_head_vo_{head_dim}_posenc_{pos_encoding_mode}_fp16qkred_{use_fp16_qk_reduction}_mask_{mask_mode}_dtypeq_{dtype_q}_dtypekv_{dtype_kv}_dtypeout_{dtype_out}_idtype_{idtype}.cu"
+            content = generate_pod_inst.get_cu_file_str(
+                head_dim,  # head_dim_qk
+                head_dim,  # head_dim_vo
+                pos_encoding_mode,
+                use_fp16_qk_reduction,
+                mask_mode,
+                dtype_q,
+                dtype_kv,
+                dtype_out,
+                idtype,
+            )
+            for use_sliding_window in [True, False]:
+                for use_logits_soft_cap in [True, False]:
+                    batch_decode_uris.append(
+                        f"pod_with_kv_cache_dtype_q_{dtype_q}_"
+                        f"dtype_kv_{dtype_kv}_"
+                        f"dtype_o_{dtype_out}_"
+                        f"dtype_idx_{idtype}_"
+                        f"head_dim_qk_{head_dim}_"
+                        f"head_dim_vo_{head_dim}_"
+                        f"posenc_{pos_encoding_mode}_"
+                        f"use_swa_{use_sliding_window}_"
+                        f"use_logits_cap_{use_logits_soft_cap}"
+                        f"f16qk_{bool(use_fp16_qk_reduction)}"
+                    )
+            write_if_different(path / fname, content)
+
     return (
         single_decode_uris
         + batch_decode_uris
         + single_prefill_uris
         + batch_prefill_uris
+        + pod_uris
     )
 
 

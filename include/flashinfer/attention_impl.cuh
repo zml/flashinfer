@@ -22,5 +22,6 @@
 #include "attention/default_prefill_params.cuh"
 #include "attention/prefill.cuh"
 #include "attention/variants.cuh"
+#include "attention/pod.cuh"
 
 #endif  // FLASHINFER_ATTENTION_IMPL_CUH_
