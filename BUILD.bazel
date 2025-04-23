@@ -121,6 +121,7 @@ cuda_library(
     hdrs = [
         "src/utils.h",
         "src/flashinfer_ops.cuh",
+        "src/flashinfer_ops_sm90.cuh",
     ],
     deps = [
         ":flashinfer",
@@ -131,7 +132,7 @@ cuda_library(
 cuda_library(
     name = "capi",
     hdrs = ["capi/capi.h"],
-    srcs = ["capi/capi.cu"],
+    srcs = ["capi/capi.cu", "capi/capi_sm90.cu"],
     copts = [
         "-Xcompiler",
         "-Wno-switch-bool",
@@ -243,7 +244,7 @@ kernel_instances(
 #include <flashinfer/attention/hopper/variants.cuh>
 #include <flashinfer/cutlass_utils.cuh>
 
-using PagedParams = ::flashinfer::BatchPrefillPagedParams<
+using PagedParams = ::flashinfer::BatchPrefillPagedSm90Params<
     ::flashinfer::cutlass_dtype_t<{{ dtype_o }}>,
     ::flashinfer::cutlass_dtype_t<{{ dtype_o }}>,
     ::flashinfer::cutlass_dtype_t<{{ dtype_o }}>,
