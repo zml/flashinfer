@@ -236,11 +236,12 @@ cudaError_t PODWithKVCacheTensorDispatched(PrefillParams prefill_params,
   constexpr uint32_t NUM_WARPS_Q_D = get_num_warps_q(CTA_TILE_Q_D);
   constexpr uint32_t NUM_WARPS_KV_D = get_num_warps_kv(CTA_TILE_Q_D);
 
-  if (padded_batch_size_d == 0) {
-    // No request, skip
-    // this won't happen in CUDAGraph mode because we fixed the padded_batch_size
-    return cudaSuccess;
-  }
+  //if (padded_batch_size_d == 0) {
+  //  // No request, skip
+  //  // this won't happen in CUDAGraph mode because we fixed the padded_batch_size
+  //    std::cout << "Early return" << std::endl;
+  //  return cudaSuccess;
+  //}
 
   // constexpr uint32_t NUM_MMA_D_QK = HEAD_DIM_QK / 16;
   // constexpr uint32_t NUM_MMA_D_VO = HEAD_DIM_VO / 16;

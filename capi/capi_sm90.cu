@@ -46,7 +46,7 @@ void flashinfer_BatchPrefillHandlerSm90Plan(
 }
 
 __attribute__ ((visibility("default")))
-void flashinfer_BatchPrefillWithPagedKVCacheSm90Wrapper(
+int flashinfer_BatchPrefillWithPagedKVCacheSm90Wrapper(
     flashinfer_BatchPrefillSm90Handler* handler,
     void* q,
     flashinfer_paged_kv_t paged_kv,
@@ -67,7 +67,7 @@ void flashinfer_BatchPrefillWithPagedKVCacheSm90Wrapper(
 
     static_assert(sizeof(flashinfer::BatchPrefillSm90Handler) == sizeof(flashinfer_BatchPrefillSm90Handler), "mismatch");
 
-    flashinfer::BatchPrefillWithPagedKVCacheSm90Wrapper<DTypeQ, DTypeKV, DTypeO, IdType>(
+    cudaError_t status = flashinfer::BatchPrefillWithPagedKVCacheSm90Wrapper<DTypeQ, DTypeKV, DTypeO, IdType>(
         reinterpret_cast<flashinfer::BatchPrefillSm90Handler*>(handler),
         static_cast<DTypeQ*>(q),
         flashinfer::paged_kv_t<DTypeKV, IdType>(
@@ -94,4 +94,6 @@ void flashinfer_BatchPrefillWithPagedKVCacheSm90Wrapper(
         1.f,
         1e4,
         reinterpret_cast<cudaStream_t>(stream));
+    
+    return (int)status;
 }

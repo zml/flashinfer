@@ -113,7 +113,7 @@ void flashinfer_BatchDecodeHandlerPlan(
     uint32_t page_size
 );
 
-void flashinfer_BatchDecodeWithPagedKVCacheWrapper(
+int flashinfer_BatchDecodeWithPagedKVCacheWrapper(
     flashinfer_BatchDecodeHandler* handler,
     void* q,
     int32_t* q_rope_offset,
@@ -143,7 +143,7 @@ void flashinfer_BatchPrefillHandlerPlan(
     uint32_t page_size
 );
 
-void flashinfer_BatchPrefillWithPagedKVCacheWrapper(
+int flashinfer_BatchPrefillWithPagedKVCacheWrapper(
     flashinfer_BatchPrefillHandler* handler,
     void* q,
     int32_t* qo_indptr,
@@ -176,7 +176,7 @@ void flashinfer_BatchPrefillHandlerSm90Plan(
     uint32_t page_size
 );
 
-void flashinfer_BatchPrefillWithPagedKVCacheSm90Wrapper(
+int flashinfer_BatchPrefillWithPagedKVCacheSm90Wrapper(
     flashinfer_BatchPrefillSm90Handler* handler,
     void* q,
     flashinfer_paged_kv_t paged_kv,
@@ -207,7 +207,7 @@ void flashinfer_PODHandlerPlan(
     uint32_t page_size
 );
 
-void flashinfer_PODWithPagedKVCacheWrapper(
+int flashinfer_PODWithPagedKVCacheWrapper(
     flashinfer_PODHandler* handler,
     void* q_p,
     void* k_p,
@@ -219,6 +219,7 @@ void flashinfer_PODWithPagedKVCacheWrapper(
     uint32_t qo_len_p,
     uint32_t kv_len_p,
     uint32_t head_dim_p,
+    bool causal,
     void* q_d,
     int32_t* qo_indptr,
     void* o,
