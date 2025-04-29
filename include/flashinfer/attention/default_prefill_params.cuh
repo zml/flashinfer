@@ -301,6 +301,7 @@ struct BatchPrefillPagedParams {
   IdType* o_indptr;
   bool* block_valid_mask;
   IdType* kv_chunk_size_ptr;
+  int32_t* tb_assign_ptr;
   uint32_t max_total_num_rows;
   uint32_t* total_num_rows;
   uint32_t padded_batch_size;
@@ -332,6 +333,7 @@ struct BatchPrefillPagedParams {
         o_indptr(nullptr),
         block_valid_mask(nullptr),
         kv_chunk_size_ptr(nullptr),
+        tb_assign_ptr(nullptr),
         max_total_num_rows(0),
         total_num_rows(nullptr),
         padded_batch_size(0),
@@ -369,6 +371,7 @@ struct BatchPrefillPagedParams {
         o_indptr(nullptr),
         block_valid_mask(nullptr),
         kv_chunk_size_ptr(nullptr),
+        tb_assign_ptr(nullptr),
         max_total_num_rows(0),
         total_num_rows(nullptr),
         padded_batch_size(0),

@@ -377,6 +377,10 @@ class PODHandler {
     return nullptr;
   }
 
+  int32_t* GetTbAssignPtr() {
+    return GetPtrFromBaseOffset<int32_t>(int_buffer_, plan_info_.tb_assign_offset);
+  }
+
   bool* GetBlockValidMask() {
     if (plan_info_.split_kv && plan_info_.enable_cuda_graph) {
       return GetPtrFromBaseOffset<bool>(int_buffer_, plan_info_.block_valid_mask_offset);
@@ -856,18 +860,19 @@ cudaError_t PODWithPagedKVCacheWrapper(
         decode_params.max_total_num_rows = plan_info.total_num_rows;
         if (plan_info.enable_cuda_graph) {
           decode_params.total_num_rows = handler->GetTotalNumRows();
+          decode_params.tb_assign_ptr = handler->GetTbAssignPtr();
         }
         decode_params.padded_batch_size = plan_info.padded_batch_size;
 
-          return PODWithKVCacheTensorDispatched<
-              HEAD_DIM_QK, HEAD_DIM_VO, POS_ENCODING_MODE, USE_FP16_QK_REDUCTION, MASK_MODE_P,
-              16, MASK_MODE_D, PrefillAttentionVariant, DecodeAttentionVariant>(
-                prefill_params, 
-                tmp_p, 
-                decode_params,
-                handler->GetTmpV<DTypeO>(), 
-                handler->GetTmpS(), 
-                stream);
+        return PODWithKVCacheTensorDispatched<
+            HEAD_DIM_QK, HEAD_DIM_VO, POS_ENCODING_MODE, USE_FP16_QK_REDUCTION, MASK_MODE_P,
+            16, MASK_MODE_D, PrefillAttentionVariant, DecodeAttentionVariant>(
+              prefill_params, 
+              tmp_p, 
+              decode_params,
+              handler->GetTmpV<DTypeO>(), 
+              handler->GetTmpS(), 
+              stream);
 
         //DISPATCH_CTA_TILE_Q(plan_info.cta_tile_q, CTA_TILE_Q, {
         //});

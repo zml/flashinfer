@@ -42,6 +42,7 @@ typedef struct {
     int64_t v_offset;
     int64_t s_offset;
     int64_t block_valid_mask_offset;
+    int64_t tb_assign_offset;
     bool enable_cuda_graph;
     bool split_kv;
 } flashinfer_PrefillPlanInfo;
