@@ -229,6 +229,19 @@ int flashinfer_PODWithPagedKVCacheWrapper(
     void* stream
 );
 
+int flashinfer_BlockSparseIndicesToVectorSparseOffset(
+    void* block_sparse_indices, 
+    void* block_sparse_indptr,
+    void* vector_sparse_offsets, 
+    void* vector_sparse_indptr,
+    void* kv_lens, 
+    int64_t stride_block, 
+    int64_t stride_n,
+    int64_t batch_size, 
+    uint32_t block_size, 
+    void* stream
+);
+
 #ifdef __cplusplus
 }
 #endif

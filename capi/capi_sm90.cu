@@ -97,3 +97,25 @@ int flashinfer_BatchPrefillWithPagedKVCacheSm90Wrapper(
     
     return (int)status;
 }
+
+__attribute__ ((visibility("default")))
+int flashinfer_BlockSparseIndicesToVectorSparseOffset(
+    void* block_sparse_indices, 
+    void* block_sparse_indptr,
+    void* vector_sparse_offsets, 
+    void* vector_sparse_indptr,
+    void* kv_lens, 
+    int64_t stride_block, 
+    int64_t stride_n,
+    int64_t batch_size, 
+    uint32_t block_size, 
+    void* stream
+) {
+    cudaError_t status = flashinfer::BlockSparseIndicesToVectorSparseOffset<int32_t>(
+        static_cast<int32_t*>(block_sparse_indices), static_cast<int32_t*>(block_sparse_indptr), static_cast<int32_t*>(vector_sparse_offsets), 
+        static_cast<int32_t*>(vector_sparse_indptr), static_cast<int32_t*>(kv_lens), stride_block, 
+        stride_n, batch_size, block_size, 
+        reinterpret_cast<cudaStream_t>(stream)
+    );
+    return (int)status;
+}
