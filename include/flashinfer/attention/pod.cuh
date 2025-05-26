@@ -407,9 +407,8 @@ cudaError_t PODWithKVCacheTensorDispatched(PrefillParams prefill_params,
             // nthrs);
             //  ************************************************ /
 
-            static int* tbAssign = nullptr;
-            if (tbAssign == nullptr) cudaMalloc(&tbAssign, sizeof(int) * (num_sm + 2));
-            cudaMemset(tbAssign, 0, sizeof(int) * (num_sm + 2));
+            int* tbAssign = reinterpret_cast<int*>(decode_params.tb_assign_ptr);
+            cudaMemsetAsync(tbAssign, 0, sizeof(int) * (num_sm + 2), stream);
 
             // Setup kernel arguments
             void* args[] = {(void*)&xsize, (void*)&prefill_params, (void*)&decode_params,

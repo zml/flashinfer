@@ -42,6 +42,7 @@ typedef struct {
     int64_t v_offset;
     int64_t s_offset;
     int64_t block_valid_mask_offset;
+    int64_t tb_assign_offset;
     bool enable_cuda_graph;
     bool split_kv;
 } flashinfer_PrefillPlanInfo;
@@ -68,6 +69,15 @@ typedef struct {
     int32_t* last_page_len;
     int32_t* rope_pos_offset;
 } flashinfer_paged_kv_t;
+
+typedef struct {
+    void* page_locked_buffer_;
+    void* int_buffer_;
+    void* float_buffer_;
+    flashinfer_PrefillPlanInfo plan_info_;
+    bool enable_cuda_graph_;
+    void* stream_;
+} flashinfer_PODHandler;
 
 void flashinfer_BatchDecodeHandlerPlan(
     flashinfer_BatchDecodeHandler* handler,
@@ -130,6 +140,42 @@ void flashinfer_BatchPrefillWithPagedKVCacheWrapper(
     void* stream
 );
 
+void flashinfer_PODHandlerPlan(
+    flashinfer_PODHandler* handler,
+    void* float_buffer,
+    size_t float_workspace_size_in_bytes,
+    void* int_buffer,
+    size_t int_workspace_size_in_bytes,
+    int32_t* qo_indptr_h,
+    int32_t* kv_indptr_h,
+    uint32_t total_num_rows,
+    uint32_t batch_size,
+    uint32_t num_qo_heads,
+    uint32_t num_kv_heads,
+    uint32_t head_dim,
+    uint32_t page_size
+);
+
+int flashinfer_PODWithPagedKVCacheWrapper(
+    flashinfer_PODHandler* handler,
+    void* q_p,
+    void* k_p,
+    void* v_p,
+    void* o_p,
+    void* tmp_p,
+    uint32_t num_qo_heads_p,
+    uint32_t num_kv_heads_p,
+    uint32_t qo_len_p,
+    uint32_t kv_len_p,
+    uint32_t head_dim_p,
+    bool causal,
+    void* q_d,
+    int32_t* qo_indptr,
+    void* o,
+    flashinfer_paged_kv_t paged_kv,
+    uint32_t num_qo_heads_d,
+    void* stream
+);
 #ifdef __cplusplus
 }
 #endif

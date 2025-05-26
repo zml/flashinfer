@@ -278,6 +278,126 @@ class BatchPrefillHandler {
 };
 
 template <uint32_t HEAD_DIM_QK, uint32_t HEAD_DIM_VO, PosEncodingMode POS_ENCODING_MODE,
+          bool USE_FP16_QK_REDUCTION, MaskMode MASK_MODE_P, uint32_t CTA_TILE_Q,
+          MaskMode MASK_MODE_D, typename PrefillAttentionVariant, typename DecodeAttentionVariant,
+          typename PrefillParams, typename DecodeParams>
+cudaError_t PODWithKVCacheTensorDispatched(PrefillParams prefill_params,
+                                           typename PrefillParams::DTypeO* tmp_p,
+                                           DecodeParams decode_params,
+                                           typename DecodeParams::DTypeO* tmp_v, float* tmp_s,
+                                           cudaStream_t stream);
+
+class PODHandler {
+ public:
+  void UpdatePageLockedBufferSize(size_t int_workspace_size_in_bytes) {
+    cudaFreeHost(page_locked_buffer_);
+    cudaMallocHost(&page_locked_buffer_, int_workspace_size_in_bytes);
+  }
+
+  template <typename DTypeO, typename IdType>
+  cudaError_t Plan(void* float_buffer, size_t float_workspace_size_in_bytes, void* int_buffer,
+                   size_t int_workspace_size_in_bytes, IdType* qo_indptr_h, IdType* kv_indptr_h,
+                   uint32_t total_num_rows, uint32_t batch_size, uint32_t num_qo_heads,
+                   uint32_t num_kv_heads, uint32_t head_dim, uint32_t page_size) {
+    int_buffer_ = int_buffer;
+    float_buffer_ = float_buffer;
+    return PrefillPlan<IdType>(float_buffer, float_workspace_size_in_bytes, int_buffer,
+                               page_locked_buffer_, int_workspace_size_in_bytes, plan_info_,
+                               qo_indptr_h, kv_indptr_h, total_num_rows, batch_size, num_qo_heads,
+                               num_kv_heads, head_dim, head_dim, page_size, enable_cuda_graph_,
+                               sizeof(DTypeO), stream_);
+  }
+
+  cudaStream_t GetCUDAStream() const { return stream_; }
+
+  void SetCUDAStream(cudaStream_t stream) { stream_ = stream; }
+
+  bool IsCUDAGraphEnabled() const { return enable_cuda_graph_; }
+
+  PODHandler(bool enable_cuda_graph = false)
+      : enable_cuda_graph_(enable_cuda_graph), stream_(nullptr) {
+    cudaMallocHost(&page_locked_buffer_, 8 * 1024 * 1024);
+  }
+  ~PODHandler() { cudaFreeHost(page_locked_buffer_); }
+
+  PrefillPlanInfo GetPlanInfo() const { return plan_info_; }
+
+  template <typename IdType>
+  IdType* GetRequestIndices() {
+    return GetPtrFromBaseOffset<IdType>(int_buffer_, plan_info_.request_indices_offset);
+  }
+
+  template <typename IdType>
+  IdType* GetQOTileIndices() {
+    return GetPtrFromBaseOffset<IdType>(int_buffer_, plan_info_.qo_tile_indices_offset);
+  }
+
+  template <typename IdType>
+  IdType* GetKVTileIndices() {
+    return GetPtrFromBaseOffset<IdType>(int_buffer_, plan_info_.kv_tile_indices_offset);
+  }
+
+  template <typename IdType>
+  IdType* GetOIndptr() {
+    return GetPtrFromBaseOffset<IdType>(int_buffer_, plan_info_.o_indptr_offset);
+  }
+
+  template <typename IdType>
+  IdType* GetKVChunkSizePtr() {
+    return GetPtrFromBaseOffset<IdType>(int_buffer_, plan_info_.kv_chunk_size_ptr_offset);
+  }
+
+  template <typename IdType>
+  IdType* GetMergeIndptr() {
+    if (plan_info_.split_kv) {
+      return GetPtrFromBaseOffset<IdType>(int_buffer_, plan_info_.merge_indptr_offset);
+    }
+    return nullptr;
+  }
+
+  template <typename DTypeO>
+  DTypeO* GetTmpV() {
+    if (plan_info_.split_kv) {
+      return GetPtrFromBaseOffset<DTypeO>(float_buffer_, plan_info_.v_offset);
+    }
+    return nullptr;
+  }
+
+  float* GetTmpS() {
+    if (plan_info_.split_kv) {
+      return GetPtrFromBaseOffset<float>(float_buffer_, plan_info_.s_offset);
+    }
+    return nullptr;
+  }
+
+  uint32_t* GetTotalNumRows() {
+    if (plan_info_.enable_cuda_graph) {
+      return GetPtrFromBaseOffset<uint32_t>(int_buffer_, plan_info_.total_num_rows_offset);
+    }
+    return nullptr;
+  }
+
+  int32_t* GetTbAssignPtr() {
+    return GetPtrFromBaseOffset<int32_t>(int_buffer_, plan_info_.tb_assign_offset);
+  }
+
+  bool* GetBlockValidMask() {
+    if (plan_info_.split_kv && plan_info_.enable_cuda_graph) {
+      return GetPtrFromBaseOffset<bool>(int_buffer_, plan_info_.block_valid_mask_offset);
+    }
+    return nullptr;
+  }
+
+ protected:
+  void* page_locked_buffer_;
+  void* int_buffer_;
+  void* float_buffer_;
+  PrefillPlanInfo plan_info_;
+  bool enable_cuda_graph_;
+  cudaStream_t stream_;
+};
+
+template <uint32_t HEAD_DIM_QK, uint32_t HEAD_DIM_VO, PosEncodingMode POS_ENCODING_MODE,
           bool USE_FP16_QK_REDUCTION, MaskMode MASK_MODE, typename AttentionVariant,
           typename Params>
 cudaError_t SinglePrefillWithKVCacheDispatched(Params params, typename Params::DTypeO* tmp,
@@ -643,6 +763,121 @@ cudaError_t BatchDecodeHandlerPlanMLA(BatchDecodeHandler* handler, void* float_b
         float_buffer, float_workspace_size_in_bytes, int_buffer, int_workspace_size_in_bytes,
         indptr_h, last_page_len_h, batch_size, num_qo_heads, page_size);
   });
+}
+
+template <typename DTypeQ, typename DTypeKV, typename DTypeO, typename IdType>
+cudaError_t PODWithPagedKVCacheWrapper(
+    PODHandler* handler, 
+    DTypeQ* q_p, DTypeKV* k_p, DTypeKV* v_p, DTypeO* o_p, DTypeO* tmp_p,
+    uint32_t num_qo_heads_p, uint32_t num_kv_heads_p,
+    uint32_t qo_len_p, uint32_t kv_len_p, uint32_t head_dim_p,
+    bool causal,
+    QKVLayout kv_layout,
+    DTypeQ* q_d, IdType* qo_indptr, DTypeO* o_d,
+    paged_kv_t<DTypeKV, IdType> paged_kv, 
+    uint32_t num_qo_heads_d,
+    std::optional<float> maybe_sm_scale = std::nullopt,
+    cudaStream_t stream = nullptr) {
+  if (num_qo_heads_p != num_qo_heads_d) {
+    std::ostringstream err_msg;
+    err_msg << "num_qo_heads_p " << num_qo_heads_p << " is not equal to num_qo_heads_d " << num_qo_heads_d;
+    FLASHINFER_ERROR(err_msg.str());
+  }
+
+  if (num_kv_heads_p != paged_kv.num_heads) {
+    std::ostringstream err_msg;
+    err_msg << "num_kv_heads_p " << num_kv_heads_p << " is not equal to paged_kv.num_heads " << paged_kv.num_heads;
+    FLASHINFER_ERROR(err_msg.str());
+  }
+
+  if (head_dim_p != paged_kv.head_dim) {
+    std::ostringstream err_msg;
+    err_msg << "head_dim_p " << head_dim_p << " is not equal to paged_kv.head_dim " << paged_kv.head_dim;
+    FLASHINFER_ERROR(err_msg.str());
+  }
+
+  const uint32_t num_qo_heads = num_qo_heads_p;
+  const uint32_t num_kv_heads = num_kv_heads_p;
+  const uint32_t head_dim = head_dim_p;
+
+  if (num_qo_heads % num_kv_heads != 0) {
+    std::ostringstream err_msg;
+    err_msg << "num_qo_heads " << num_qo_heads << " is not a multiple of num_kv_heads " << num_kv_heads;
+    FLASHINFER_ERROR(err_msg.str());
+  }
+
+  const float sm_scale = maybe_sm_scale.value_or(1.f / std::sqrt(float(head_dim)));
+  auto [qo_stride_n, qo_stride_h, kv_stride_n, kv_stride_h] =
+      get_qkv_strides(kv_layout, kv_len_p, num_qo_heads, num_kv_heads, head_dim);
+    
+  auto plan_info = handler->GetPlanInfo();
+
+  const MaskMode mask_mode_p = causal ? MaskMode::kCausal : MaskMode::kNone;
+  constexpr MaskMode MASK_MODE_D = MaskMode::kNone;
+  constexpr auto POS_ENCODING_MODE = PosEncodingMode::kNone;                 
+  constexpr bool USE_FP16_QK_REDUCTION = false;                              
+
+  DISPATCH_head_dim(head_dim, HEAD_DIM_QK, {                   
+    DISPATCH_mask_mode(mask_mode_p, MASK_MODE_P, {
+        [[maybe_unused]] constexpr int HEAD_DIM_VO = HEAD_DIM_QK;                
+        constexpr bool USE_SLIDING_WINDOW_P = false;
+        constexpr bool USE_SLIDING_WINDOW_D = false;
+        using PrefillParams = SinglePrefillParams<DTypeQ, DTypeKV, DTypeO>;
+        using DecodeParams = BatchPrefillPagedParams<DTypeQ, DTypeKV, DTypeO, IdType>;              
+        using PrefillAttentionVariant = DefaultAttention</*use_custom_mask=*/false, false, false, /*use_alibi_bias=*/false>;
+        using DecodeAttentionVariant = DefaultAttention</*use_custom_mask=*/false, false, false, /*use_alibi_bias=*/false>;
+
+        PrefillParams prefill_params(
+                q_p, k_p, v_p, nullptr,
+                o_p, nullptr, nullptr,
+                num_qo_heads, num_kv_heads, qo_len_p, 
+                kv_len_p, qo_stride_n, qo_stride_h,
+                kv_stride_n, kv_stride_h, head_dim,
+                -1, 0.0f, sm_scale,
+                1.f, 1e4);
+        
+        DecodeParams decode_params(
+          q_d, paged_kv,
+          nullptr, qo_indptr,
+          nullptr, nullptr,
+          o_d, nullptr, nullptr,
+          num_qo_heads, num_qo_heads * HEAD_DIM_QK, HEAD_DIM_QK,
+          -1, 0.0f, sm_scale,
+          1.f, 1e4
+        );
+
+        decode_params.request_indices = handler->GetRequestIndices<IdType>();
+        decode_params.qo_tile_indices = handler->GetQOTileIndices<IdType>();
+        decode_params.kv_tile_indices = handler->GetKVTileIndices<IdType>();
+        decode_params.o_indptr = handler->GetOIndptr<IdType>();
+        decode_params.kv_chunk_size_ptr = handler->GetKVChunkSizePtr<IdType>();
+        if (plan_info.split_kv) {
+          decode_params.merge_indptr = handler->GetMergeIndptr<IdType>();
+          if (plan_info.enable_cuda_graph) {
+            decode_params.block_valid_mask = handler->GetBlockValidMask();
+          }
+        }
+        decode_params.max_total_num_rows = plan_info.total_num_rows;
+        if (plan_info.enable_cuda_graph) {
+          decode_params.total_num_rows = handler->GetTotalNumRows();
+          decode_params.tb_assign_ptr = handler->GetTbAssignPtr();
+        }
+        decode_params.padded_batch_size = plan_info.padded_batch_size;
+
+        return PODWithKVCacheTensorDispatched<
+            HEAD_DIM_QK, HEAD_DIM_VO, POS_ENCODING_MODE, USE_FP16_QK_REDUCTION, MASK_MODE_P,
+            16, MASK_MODE_D, PrefillAttentionVariant, DecodeAttentionVariant>(
+              prefill_params, 
+              tmp_p, 
+              decode_params,
+              handler->GetTmpV<DTypeO>(), 
+              handler->GetTmpS(), 
+              stream);
+
+        //DISPATCH_CTA_TILE_Q(plan_info.cta_tile_q, CTA_TILE_Q, {
+        //});
+    })
+  })                                                                        
 }
 
 }  // namespace flashinfer

@@ -602,6 +602,7 @@ struct PrefillPlanInfo {
   int64_t v_offset;
   int64_t s_offset;
   int64_t block_valid_mask_offset;
+  int64_t tb_assign_offset;
   bool enable_cuda_graph;
   bool split_kv;
 
@@ -619,6 +620,7 @@ struct PrefillPlanInfo {
         v_offset(0),
         s_offset(0),
         block_valid_mask_offset(0),
+        tb_assign_offset(0),
         enable_cuda_graph(false),
         split_kv(false) {}
 
@@ -722,6 +724,8 @@ inline cudaError_t PrefillPlan(void* float_buffer, size_t float_workspace_size_i
     uint32_t* total_num_rows_h =
         GetPtrFromBaseOffset<uint32_t>(page_locked_int_buffer, plan_info.total_num_rows_offset);
     *total_num_rows_h = qo_indptr_h[batch_size];
+
+    plan_info.tb_assign_offset = int_allocator.aligned_alloc_offset(sizeof(int) * (num_sm + 2), 16, "batch_prefill_tb_assign");
   }
 
   IdType* request_indices_h =
