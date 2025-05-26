@@ -57,6 +57,26 @@ typedef struct {
 } flashinfer_BatchPrefillHandler;
 
 typedef struct {
+    int64_t qo_tile_indices_offset;
+    int64_t qo_indptr_offset;
+    int64_t kv_indptr_offset;
+    int64_t qo_len_offset;
+    int64_t kv_len_offset;
+    int64_t head_indices_offset;
+    int64_t work_indptr_offset;
+    bool same_schedule_for_all_heads;
+} flashinfer_PrefillPlanSm90Info;
+
+typedef struct {
+    void* page_locked_buffer_;
+    void* int_buffer_;
+    void* float_buffer_;
+    flashinfer_PrefillPlanSm90Info plan_info_;
+    bool enable_cuda_graph_;
+    void* stream_;
+} flashinfer_BatchPrefillSm90Handler;
+
+typedef struct {
     uint32_t num_heads;
     uint32_t page_size;
     uint32_t head_dim;
@@ -94,7 +114,7 @@ void flashinfer_BatchDecodeHandlerPlan(
     uint32_t page_size
 );
 
-void flashinfer_BatchDecodeWithPagedKVCacheWrapper(
+int flashinfer_BatchDecodeWithPagedKVCacheWrapper(
     flashinfer_BatchDecodeHandler* handler,
     void* q,
     int32_t* q_rope_offset,
@@ -124,7 +144,7 @@ void flashinfer_BatchPrefillHandlerPlan(
     uint32_t page_size
 );
 
-void flashinfer_BatchPrefillWithPagedKVCacheWrapper(
+int flashinfer_BatchPrefillWithPagedKVCacheWrapper(
     flashinfer_BatchPrefillHandler* handler,
     void* q,
     int32_t* qo_indptr,
@@ -132,6 +152,38 @@ void flashinfer_BatchPrefillWithPagedKVCacheWrapper(
     flashinfer_paged_kv_t paged_kv,
     void* o,
     float* lse,
+    uint32_t num_qo_heads,
+    bool causal,
+    float sm_scale,
+    float rope_scale,
+    float rope_theta,
+    void* stream
+);
+
+void flashinfer_BatchPrefillHandlerSm90Plan(
+    flashinfer_BatchPrefillSm90Handler* handler,
+    void* float_buffer,
+    size_t float_workspace_size_in_bytes,
+    void* int_buffer,
+    size_t int_workspace_size_in_bytes,
+    int32_t* qo_indptr_h,
+    int32_t* kv_indptr_h,
+    int32_t* kv_len_arr_h,
+    uint32_t total_num_rows,
+    uint32_t batch_size,
+    uint32_t num_qo_heads,
+    uint32_t num_kv_heads,
+    uint32_t head_dim,
+    uint32_t page_size
+);
+
+int flashinfer_BatchPrefillWithPagedKVCacheSm90Wrapper(
+    flashinfer_BatchPrefillSm90Handler* handler,
+    void* q,
+    flashinfer_paged_kv_t paged_kv,
+    void* o,
+    float* lse,
+    uint32_t nnz_qo,
     uint32_t num_qo_heads,
     bool causal,
     float sm_scale,
@@ -176,6 +228,20 @@ int flashinfer_PODWithPagedKVCacheWrapper(
     uint32_t num_qo_heads_d,
     void* stream
 );
+
+int flashinfer_BlockSparseIndicesToVectorSparseOffset(
+    void* block_sparse_indices, 
+    void* block_sparse_indptr,
+    void* vector_sparse_offsets, 
+    void* vector_sparse_indptr,
+    void* kv_lens, 
+    int64_t stride_block, 
+    int64_t stride_n,
+    int64_t batch_size, 
+    uint32_t block_size, 
+    void* stream
+);
+
 #ifdef __cplusplus
 }
 #endif

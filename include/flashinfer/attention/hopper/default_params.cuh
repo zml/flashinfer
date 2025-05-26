@@ -23,7 +23,7 @@
 namespace flashinfer {
 
 template <typename DTypeQ_, typename DTypeKV_, typename DTypeO_, typename IdType_ = int32_t>
-struct SinglePrefillParams {
+struct SinglePrefillSm90Params {
   using DTypeQ = DTypeQ_;
   using DTypeKV = DTypeKV_;
   using DTypeO = DTypeO_;
@@ -63,7 +63,7 @@ struct SinglePrefillParams {
 };
 
 template <typename DTypeQ_, typename DTypeKV_, typename DTypeO_, typename IdType_>
-struct BatchPrefillRaggedParams {
+struct BatchPrefillRaggedSm90Params {
   using DTypeQ = DTypeQ_;
   using DTypeKV = DTypeKV_;
   using DTypeO = DTypeO_;
@@ -108,7 +108,7 @@ struct BatchPrefillRaggedParams {
 };
 
 template <typename DTypeQ_, typename DTypeKV_, typename DTypeO_, typename IdType_>
-struct BatchPrefillPagedParams {
+struct BatchPrefillPagedSm90Params {
   using DTypeQ = DTypeQ_;
   using DTypeKV = DTypeKV_;
   using DTypeO = DTypeO_;

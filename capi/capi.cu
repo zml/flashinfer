@@ -1,6 +1,7 @@
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
+#include <flashinfer/cutlass_utils.cuh>
 
 #include "src/flashinfer_ops.cuh"
 
@@ -45,7 +46,7 @@ void flashinfer_BatchDecodeHandlerPlan(
 }
 
 __attribute__ ((visibility("default")))
-void flashinfer_BatchDecodeWithPagedKVCacheWrapper(
+int flashinfer_BatchDecodeWithPagedKVCacheWrapper(
     flashinfer_BatchDecodeHandler* handler,
     void* q,
     int32_t* q_rope_offset,
@@ -63,7 +64,7 @@ void flashinfer_BatchDecodeWithPagedKVCacheWrapper(
     using DTypeO = DTypeQ;
     using IdType = int32_t;
 
-    // cudaError_t status =
+     cudaError_t status =
     flashinfer::BatchDecodeWithPagedKVCacheWrapper<DTypeQ, DTypeKV, DTypeO, IdType>(
         reinterpret_cast<flashinfer::BatchDecodeHandler*>(handler),
         static_cast<DTypeQ*>(q),
@@ -90,6 +91,8 @@ void flashinfer_BatchDecodeWithPagedKVCacheWrapper(
         1.f,
         1e4,
         reinterpret_cast<cudaStream_t>(stream));
+
+     return (int)status;
 }
 
 __attribute__ ((visibility("default")))
@@ -131,7 +134,7 @@ void flashinfer_BatchPrefillHandlerPlan(
 }
 
 __attribute__ ((visibility("default")))
-void flashinfer_BatchPrefillWithPagedKVCacheWrapper(
+int flashinfer_BatchPrefillWithPagedKVCacheWrapper(
     flashinfer_BatchPrefillHandler* handler,
     void* q,
     int32_t* qo_indptr,
@@ -153,7 +156,7 @@ void flashinfer_BatchPrefillWithPagedKVCacheWrapper(
 
     static_assert(sizeof(flashinfer::BatchPrefillHandler) == sizeof(flashinfer_BatchPrefillHandler), "mismatch");
 
-    flashinfer::BatchPrefillWithPagedKVCacheWrapper<DTypeQ, DTypeKV, DTypeO, IdType>(
+   cudaError_t status = flashinfer::BatchPrefillWithPagedKVCacheWrapper<DTypeQ, DTypeKV, DTypeO, IdType>(
         reinterpret_cast<flashinfer::BatchPrefillHandler*>(handler),
         static_cast<DTypeQ*>(q),
         qo_indptr,
@@ -182,6 +185,9 @@ void flashinfer_BatchPrefillWithPagedKVCacheWrapper(
         1.f,
         1e4,
         reinterpret_cast<cudaStream_t>(stream));
+
+     return (int)status;
+}
 
 void flashinfer_PODHandlerPlan(
     flashinfer_PODHandler* handler,
