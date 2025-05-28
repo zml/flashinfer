@@ -145,6 +145,7 @@ cuda_library(
 
 cc_shared_library(
     name = "flashinfer_so",
+    shared_lib_name = "libflashinfer.so",
     deps = [":capi"],
 )
 
